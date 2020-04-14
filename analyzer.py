@@ -64,6 +64,14 @@ class Analyzer(ast.NodeVisitor):
             if node.value.value.func.value.id in self.names:  # check if id is in self.name (and derived from cv2)
                 self.add_targets_to_names(node)
 
+        # e.g.: somevar = [var.api_call() for var in vars]
+        elif ('elt' in node.value._fields and
+                'func' in node.value.elt._fields):
+            if ('value' in node.value.elt.func._fields and
+                node.value.elt.func.value.id in self.names) or \
+                    ('id' in node.value.elt.func._fields and node.value.elt.func.id in self.names):
+                self.add_targets_to_names(node)
+
         # NOTE: Second check for ast.Call
         elif ('func' in node.value._fields):
             # e.g.: localvar = method()
@@ -100,13 +108,14 @@ class Analyzer(ast.NodeVisitor):
                     try:
                         print(f'[DEBUG] Trying to open {os.path.join(self.current_path, import_file_name)}...')
                         with open(os.path.join(self.current_path, import_file_name)) as new_file:
-                            print(f'[DEBUG] {import_file_name} found!')
+                            print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
                             self.visit(tree)
                             self.visited_list.append(import_file_name)  # add file to list of visited names
                             print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, import_file_name)}!')
                     except FileNotFoundError:
-                        print(f'[WARNING] Could not open {os.path.join(self.current_path, import_file_name)}')
+                        # print(f'[WARNING] Could not open {import_file_name}')
+                        pass
                     finally:
                         self.generic_visit(node)
                 # e.g.: import something.some_module
@@ -114,13 +123,14 @@ class Analyzer(ast.NodeVisitor):
                     try:
                         print(f'[DEBUG] Trying to open {os.path.join(self.current_path, imp.name)}...')
                         with open(os.path.join(self.current_path, possible_path[0], f'{possible_path[1]}.py')) as new_file:
-                            print(f'[DEBUG] {import_file_name} found!')
+                            print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
                             self.visit(tree)
                             self.visited_list.append(import_file_name)  # add file to list of visited names
                             print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, possible_path[0], possible_path[1])}!')
                     except FileNotFoundError:
-                        print(f'[WARNING] Could not open {os.path.join(self.current_path, possible_path[0], possible_path[1])}.')
+                        # print(f'[WARNING] Could not open {possible_path[1]}.')
+                        pass
                     finally:
                         self.generic_visit(node)
             else:
@@ -136,13 +146,14 @@ class Analyzer(ast.NodeVisitor):
                 try:
                     print(f'[DEBUG] Trying to open {os.path.join(self.current_path, module_names[0])}.py...')
                     with open(os.path.join(self.current_path, f'{module_names[0]}.py')) as new_file:
-                        print(f'[DEBUG] {module_names[0]}.py found!')
+                        print(f'[DEBUG] {module_names[0]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
                         self.visit(tree)
                         self.visited_list.append(module_names[-1])
                         print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0])}.py!')
                 except FileNotFoundError:
-                    print(f'[WARNING] Could not find {module_names[0]}.py!')
+                    # print(f'[WARNING] Could not find {module_names[0]}.py!')
+                    pass
                 finally:
                     self.generic_visit(node)
             # e.g.: from somemodule.submodule import method
@@ -150,13 +161,14 @@ class Analyzer(ast.NodeVisitor):
                 try:
                     print(f'[DEBUG] Trying to open {os.path.join(self.current_path, module_names[0] ,module_names[1])}.py...')
                     with open(os.path.join(self.current_path, f'{module_names[0]}', f'{module_names[1]}.py')) as new_file:
-                        print(f'[DEBUG] {module_names[1]}.py found!')
+                        print(f'[DEBUG] {module_names[1]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
                         self.visit(tree)
                         self.visited_list.append(module_names[-1])
-                        print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[1])}.py!')
+                        print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0], module_names[1])}.py!')
                 except FileNotFoundError:
-                    print(f'[WARNING] Could not find {module_names[1]}.py!')
+                    # print(f'[WARNING] Could not find {module_names[1]}.py!')
+                    pass
                 finally:
                     self.generic_visit(node)
         else:
