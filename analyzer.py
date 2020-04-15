@@ -3,7 +3,7 @@ import os
 
 
 class Analyzer(ast.NodeVisitor):
-    def __init__(self, names=set(["cv2"])):
+    def __init__(self, names= set(["caffe"])):  # set(["cv2"])):
         self.names = names
         self.names_from_import = {}  # {module: set(method1, method2, method3)}
         self.stats = {}  # {method:[l1, l3, l5...]}
@@ -106,16 +106,22 @@ class Analyzer(ast.NodeVisitor):
         for imp in node.names:
             possible_path = imp.name.split('.')
             if possible_path[-1] not in self.visited_list:  # check if already visited
+
+                # check for aliases e.g import cv2 as cv
+                if possible_path[-1] in self.names and imp.asname is not None:
+                    self.names.add(imp.asname)
+
                 # e.g.: import some_module
-                if len(possible_path) < 2:
-                    import_file_name = f'{imp.name}.py'
+                if len(possible_path) == 1:
+                    import_file_name = f'{possible_path}.py'
                     try:
                         print(f'[DEBUG] Trying to open {os.path.join(self.current_path, import_file_name)}...')
                         with open(os.path.join(self.current_path, import_file_name)) as new_file:
                             print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
+                            self.visited_list.append(import_file_name)  # add file to list of visited names; must
+                            #                                       come before visit(), to avoid infinite recursion
                             self.visit(tree)
-                            self.visited_list.append(import_file_name)  # add file to list of visited names
                             print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, import_file_name)}!')
                     except FileNotFoundError:
                         # print(f'[WARNING] Could not open {import_file_name}')
@@ -129,8 +135,8 @@ class Analyzer(ast.NodeVisitor):
                         with open(os.path.join(self.current_path, possible_path[0], f'{possible_path[1]}.py')) as new_file:
                             print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
-                            self.visit(tree)
                             self.visited_list.append(import_file_name)  # add file to list of visited names
+                            self.visit(tree)
                             print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, possible_path[0], possible_path[1])}!')
                     except FileNotFoundError:
                         # print(f'[WARNING] Could not open {possible_path[1]}.')
@@ -147,7 +153,13 @@ class Analyzer(ast.NodeVisitor):
             module_names = node.module.split('.')
         else:
             module_names = [node.names[0].name] # e.g. from . import somemodule
+
         if module_names[-1] not in self.visited_list:  # check if already visited
+
+            # check for aliases e.g import cv2 as cv
+            if module_names[-1] in self.names and node.names[0].asname is not None:
+                self.names.add(node.names[0].asname)
+
             # e.g.: from somemodule import method
             if len(module_names) == 1:
                 try:
@@ -155,11 +167,8 @@ class Analyzer(ast.NodeVisitor):
                     with open(os.path.join(self.current_path, f'{module_names[0]}.py')) as new_file:
                         print(f'[DEBUG] {module_names[0]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
+                        self.visited_list.append(module_names[-1])
                         self.visit(tree)
-                        if node.names[0].asname is None:
-                            self.visited_list.append(module_names[-1])
-                        else:
-                            self.visited_list.append(node.names[0].asname)
                         print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0])}.py!')
                 except FileNotFoundError:
                     # print(f'[WARNING] Could not find {module_names[0]}.py!')
@@ -173,8 +182,8 @@ class Analyzer(ast.NodeVisitor):
                     with open(os.path.join(self.current_path, f'{module_names[0]}', f'{module_names[1]}.py')) as new_file:
                         print(f'[DEBUG] {module_names[1]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
-                        self.visit(tree)
                         self.visited_list.append(module_names[-1])
+                        self.visit(tree)
                         print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0], module_names[1])}.py!')
                 except FileNotFoundError:
                     # print(f'[WARNING] Could not find {module_names[1]}.py!')
@@ -198,7 +207,7 @@ class Analyzer(ast.NodeVisitor):
 
 
 class BodyAnalyzer(Analyzer):
-    def __init__(self, function_name, names=set(['cv2'])):
+    def __init__(self, function_name, names=set(["caffe"])):  # set(['cv2'])):
         self.function_name = function_name
         Analyzer.__init__(self, names)
 
@@ -225,7 +234,7 @@ class BodyAnalyzer(Analyzer):
 
 class FunctionAnalyzer(ast.NodeVisitor):
     def __init__(self):
-        self.stats = ['cv2']  # list
+        self.stats = ['caffe']  # ['cv2']  # list
         self.current_path = ''
         self.current_file = ''
 
