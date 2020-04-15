@@ -64,7 +64,11 @@ class Analyzer(ast.NodeVisitor):
             if node.value.value.func.value.id in self.names:  # check if id is in self.name (and derived from cv2)
                 self.add_targets_to_names(node)
 
-        # e.g.: somevar = [var.api_call() for var in vars]
+        # e.g.: somevar = anothervar
+        elif 'id' in node.value._fields and node.value.id in self.names:
+            self.add_targets_to_names(node)
+
+        # NOTE: Second check for list e.g.: somevar = [var.api_call() for var in vars]
         elif ('elt' in node.value._fields and
                 'func' in node.value.elt._fields):
             if ('value' in node.value.elt.func._fields and
@@ -72,7 +76,7 @@ class Analyzer(ast.NodeVisitor):
                     ('id' in node.value.elt.func._fields and node.value.elt.func.id in self.names):
                 self.add_targets_to_names(node)
 
-        # NOTE: Second check for ast.Call
+        # NOTE: Third check for ast.Call e.g.: somevar = apicall()
         elif ('func' in node.value._fields):
             # e.g.: localvar = method()
             if 'id' in node.value.func._fields and node.value.func.id in self.names:
@@ -87,7 +91,7 @@ class Analyzer(ast.NodeVisitor):
                 elif 'attr' in node.value.func._fields and node.value.func.attr in self.names:
                     self.add_targets_to_names(node)
 
-        # NOTE: Third check for ast.Attribute i.e. immediate element after '.'
+        # NOTE: Fourth check for ast.Attribute i.e. immediate element after '.'
         # e.g.: mylocalvar = somemodule.globalvar
         elif ('attr' in node.value._fields and
                 type(node.value.attr) is not bool and
@@ -139,7 +143,10 @@ class Analyzer(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node):
 
-        module_names = node.module.split('.')
+        if node.module is not None:
+            module_names = node.module.split('.')
+        else:
+            module_names = [node.names[0].name] # e.g. from . import somemodule
         if module_names[-1] not in self.visited_list:  # check if already visited
             # e.g.: from somemodule import method
             if len(module_names) == 1:
@@ -149,7 +156,10 @@ class Analyzer(ast.NodeVisitor):
                         print(f'[DEBUG] {module_names[0]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
                         self.visit(tree)
-                        self.visited_list.append(module_names[-1])
+                        if node.names[0].asname is None:
+                            self.visited_list.append(module_names[-1])
+                        else:
+                            self.visited_list.append(node.names[0].asname)
                         print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0])}.py!')
                 except FileNotFoundError:
                     # print(f'[WARNING] Could not find {module_names[0]}.py!')

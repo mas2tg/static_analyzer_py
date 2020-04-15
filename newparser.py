@@ -1,4 +1,9 @@
-# NOTE: this script does not check for global variables!
+# This program performs two passes:
+# 1. iterate through all the files in the project looking for function definitions and check if they
+#   return opencv object
+# 2. iterate through the main script and imports to get the number of api calls while keeping track of local variables
+
+# NOTE: this script does not work well with function parameters that are opencv objects
 
 import sys
 import analyzer
