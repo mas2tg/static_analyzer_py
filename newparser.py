@@ -21,7 +21,7 @@ if __name__ == '__main__':
     # check all python scripts for functions that return a cv2 object
     # NOTE: we don't do any static analysis on this step! we just get the relevant functions to track
     # TODO: do static analysis on functions and avoid doing it again in the future
-    print(f'[INFO] Initiating function parser...')
+    print(f'[INFO] Initiating function parser... (obtains functions that return cv2 objects!)')
     function_analyzer = analyzer.FunctionAnalyzer()
 
     for dirpath, subdir, files in os.walk(root):
