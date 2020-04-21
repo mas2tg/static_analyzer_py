@@ -1,21 +1,30 @@
 import ast
 import os
 
+SEED = 'torch'
 
 class Analyzer(ast.NodeVisitor):
-    def __init__(self, names= set(["caffe"])):  # set(["cv2"])):
+    def __init__(self, names = set([SEED])):  # set(["caffe"])):
         self.names = names
         self.names_from_import = {}  # {module: set(method1, method2, method3)}
         self.stats = {}  # {method:[l1, l3, l5...]}
         self.current_path = ''
-        self.current_file = ''
+        self.current_folder = []  # used when imports import other modules
+        self.current_file = ''  # legacy; not really used
         self.visited_list = []  # this is just used by ast.ImportFrom and ast.Import to avoid
         #  visiting the same file twice
 
-    def pre_visit(self, node, file, path):  # this is only necessary when visiting multiple files
+    def pre_visit(self, node, file, path):  # only used one time
         self.current_path = path
         self.current_file = file
         self.visit(node)
+
+    def update_folder_and_visit(self, node, folder):  # used by imports
+        if folder not in self.current_folder:  # avoid double-adding
+            self.current_folder.append(folder)  # we probably won't have duplicated names of folders
+        self.visit(node)
+        if folder in self.current_folder:
+            self.current_folder.remove(folder)
 
     def visit_Call(self, node):
         # NOTE: this only gets the number of occurrences of a given call. We need this to capture calls that
@@ -63,41 +72,48 @@ class Analyzer(ast.NodeVisitor):
     def visit_Import(self, node):
         for imp in node.names:
             possible_path = imp.name.split('.')
+            # TODO: replace below with a set of paths of places we tried to visit
             if possible_path[-1] not in self.visited_list:  # check if already visited
 
                 # check for aliases e.g import cv2 as cv
-                if possible_path[-1] in self.names:
+                # check either the first or the last name-e.g. import torch.nn as nn OR import folder.mymodule as module
+                if possible_path[-1] in self.names or possible_path[0] in self.names:
                     if imp.asname is not None:
                         self.names.add(imp.asname)
+                import_file_name = f'{possible_path[-1]}.py'
+
+                # check if import is in current directory:
+                this_path = self.current_path
+                # if node.level == 1:
+                #    this_path = os.path.join(self.current_path, self.current_folder[0])  # add current folder to path
 
                 # e.g.: import some_module
                 if len(possible_path) == 1:
-                    import_file_name = f'{possible_path[-1]}.py'
                     try:
-                        print(f'[DEBUG] Trying to open {os.path.join(self.current_path, import_file_name)}...')
-                        with open(os.path.join(self.current_path, import_file_name)) as new_file:
+                        print(f'[DEBUG] Trying to open {os.path.join(this_path, import_file_name)}...')
+                        with open(os.path.join(this_path, import_file_name)) as new_file:
                             print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
                             self.visited_list.append(possible_path[-1])  # add file to list of visited names; must
                             #                                       come before visit(), to avoid infinite recursion
                             self.visit(tree)
 
-                            print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, import_file_name)}!')
+                            print(f'[DEBUG] Successfully analysed {os.path.join(this_path, import_file_name)}!')
                     except FileNotFoundError:
                         # print(f'[WARNING] Could not open {import_file_name}')
                         pass
                     finally:
                         self.generic_visit(node)
                 # e.g.: import something.some_module
-                elif len(possible_path) == 2:  # assume two e.g.: some_module.submodule
+                elif len(possible_path) == 2:  # assuming two e.g.: some_module.submodule
                     try:
-                        print(f'[DEBUG] Trying to open {os.path.join(self.current_path, imp.name)}...')
-                        with open(os.path.join(self.current_path, possible_path[0], f'{possible_path[1]}.py')) as new_file:
+                        print(f'[DEBUG] Trying to open {os.path.join(this_path, possible_path[0], possible_path[1])}.py...')
+                        with open(os.path.join(this_path, possible_path[0], f'{possible_path[1]}.py')) as new_file:
                             print(f'[DEBUG] {import_file_name} found! Starting analysis...')
                             tree = ast.parse(new_file.read())
                             self.visited_list.append(possible_path[-1])  # add file to list of visited names
-                            self.visit(tree)
-                            print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, possible_path[0], possible_path[1])}!')
+                            self.update_folder_and_visit(tree, possible_path[0])
+                            print(f'[DEBUG] Successfully analysed {os.path.join(this_path, possible_path[0], possible_path[1])}!')
                     except FileNotFoundError:
                         # print(f'[WARNING] Could not open {possible_path[1]}.')
                         pass
@@ -113,7 +129,7 @@ class Analyzer(ast.NodeVisitor):
             module_names = node.module.split('.')
         else:
             module_names = [node.names[0].name] # e.g. from . import somemodule
-
+        # TODO: replace below with a set of paths of places we tried to visit
         if module_names[-1] not in self.visited_list:  # check if already visited
 
             # check for aliases e.g import cv2 as cv
@@ -121,16 +137,21 @@ class Analyzer(ast.NodeVisitor):
                 if node.names[0].asname is not None:
                     self.names.add(node.names[0].asname)
 
+            # check if import is in current directory:
+            this_path = self.current_path
+            if node.level == 1 and len(self.current_folder) != 0:  # just one for now; this does not work with function analyzer
+                this_path = os.path.join(self.current_path, self.current_folder[0])  # add current folder to path
+
             # e.g.: from somemodule import method
             if len(module_names) == 1:
                 try:
-                    print(f'[DEBUG] Trying to open {os.path.join(self.current_path, module_names[0])}.py...')
-                    with open(os.path.join(self.current_path, f'{module_names[0]}.py')) as new_file:
+                    print(f'[DEBUG] Trying to open {os.path.join(this_path, module_names[0])}.py...')
+                    with open(os.path.join(this_path, f'{module_names[0]}.py')) as new_file:
                         print(f'[DEBUG] {module_names[0]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
                         self.visited_list.append(module_names[-1])
                         self.visit(tree)
-                        print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0])}.py!')
+                        print(f'[DEBUG] Successfully analysed {os.path.join(this_path, module_names[0])}.py!')
                 except FileNotFoundError:
                     # print(f'[WARNING] Could not find {module_names[0]}.py!')
                     pass
@@ -139,13 +160,13 @@ class Analyzer(ast.NodeVisitor):
             # e.g.: from somemodule.submodule import method
             elif len(module_names) == 2:
                 try:
-                    print(f'[DEBUG] Trying to open {os.path.join(self.current_path, module_names[0] ,module_names[1])}.py...')
-                    with open(os.path.join(self.current_path, f'{module_names[0]}', f'{module_names[1]}.py')) as new_file:
+                    print(f'[DEBUG] Trying to open {os.path.join(this_path, module_names[0] ,module_names[1])}.py...')
+                    with open(os.path.join(this_path, f'{module_names[0]}', f'{module_names[1]}.py')) as new_file:
                         print(f'[DEBUG] {module_names[1]}.py found! Starting analysis...')
                         tree = ast.parse(new_file.read())
                         self.visited_list.append(module_names[-1])
-                        self.visit(tree)
-                        print(f'[DEBUG] Successfully analysed {os.path.join(self.current_path, module_names[0], module_names[1])}.py!')
+                        self.update_folder_and_visit(tree, module_names[0])
+                        print(f'[DEBUG] Successfully analysed {os.path.join(this_path, module_names[0], module_names[1])}.py!')
                 except FileNotFoundError:
                     # print(f'[WARNING] Could not find {module_names[1]}.py!')
                     pass
@@ -191,7 +212,7 @@ class Analyzer(ast.NodeVisitor):
 
 
 class BodyAnalyzer(Analyzer):
-    def __init__(self, function_name, names=set(["caffe"])):  # set(['cv2'])):
+    def __init__(self, function_name, names=set([SEED])):  # set(['caffe'])):
         self.function_name = function_name
         Analyzer.__init__(self, names)
 
@@ -211,9 +232,7 @@ class BodyAnalyzer(Analyzer):
 
 class FunctionAnalyzer(ast.NodeVisitor):
     def __init__(self):
-        self.stats = ['caffe']  # ['cv2']  # list
-        self.current_path = ''
-        self.current_file = ''
+        self.stats = [SEED]  # ['caffe']  # TODO: change this list to set
 
     def visit_FunctionDef(self, node):
         print(f'[INFO] found function definition with name {node.name}')
