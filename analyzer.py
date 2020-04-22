@@ -40,6 +40,7 @@ class Analyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Assign(self, node):
+        #TODO: store and show assignments at end of execution
         assigment_id = ''
         try: # try is necessary to ensure safety when, for instance, node is bool object
             assigment_id = self.get_id_from_node(node)
@@ -176,9 +177,20 @@ class Analyzer(ast.NodeVisitor):
             self.generic_visit(node)
 
     def report(self):
+        # TODO: sort by last word!
         print(f'names: {self.names}')
-        for stat in self.stats:
-            print(f'{stat}; {self.stats[stat]}; count={len(self.stats[stat])}')
+
+        stats_keys = sorted(self.stats.keys(), key=lambda n: n.split('.')[-1].lower())
+
+        #for stat in sorted(self.stats):
+        #    print(f'{stat}; {self.stats[stat]}; count={len(self.stats[stat])}')
+        prev = ''
+        for key in stats_keys:
+            local_key = key.split('.')[-1].lower()
+            if local_key != prev:
+                print()
+            print(f'{key}; {self.stats[key]}; count{len(self.stats[key])}')
+            prev = local_key
 
     def add_targets_to_names(self, node):
         for target in node.targets:
