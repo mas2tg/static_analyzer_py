@@ -4,6 +4,7 @@
 # 2. iterate through the main script and imports to get the number of api calls while keeping track of local variables
 
 # NOTE: this script does not work well with function parameters that are opencv objects
+# TODO: this program gives false positives for the project libfacedetection
 
 import sys
 import analyzer
@@ -30,11 +31,17 @@ if __name__ == '__main__':
             print(f'[DEBUG]: checking file {cur_file}...')
             if file[-3:] == '.py':
                 with open(cur_file, "r") as source:
-                    tree = ast.parse(source.read())
+                    try:
+                        tree = ast.parse(source.read())
+                    except SyntaxError:
+                        print("[ERROR] something went wrotn!")
+
                     function_analyzer.visit(tree)
                     print(f'[DEBUG]: finished checking file {file}!')
+    
     function_analyzer.report()
     print(f'[INFO] function parser has finished!\n\n')
+
 
     # check main python script with detected functions of interest
     # now we do perform static analysis on my script and also on imports
