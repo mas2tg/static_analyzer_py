@@ -138,6 +138,27 @@ class Analyzer(ast.NodeVisitor):
             else:
                 self.generic_visit(node)
 
+    def try_to_open(self, path_list, module_names):
+        for path in path_list:
+            if path not in self.attempted_paths:
+                try:
+                    self.attempted_paths.add(path)  # add to attempted
+                    print(f'[DEBUG] Trying to open {path}...')
+                    with open(path) as new_file:
+                        print(f'[DEBUG] File found! Starting analysis...')
+                        for p in path_list:
+                            self.attempted_paths.add(p)  # add the remaining options since we found the file
+                        tree = ast.parse(new_file.read())
+                        if len(module_names) == 1:
+                            self.visit(tree)
+                        else:
+                            self.update_folder_and_visit(tree, module_names)
+                        print(f'[DEBUG] Successfully analysed {path}!')
+                except FileNotFoundError:
+                    pass
+                except IsADirectoryError:
+                    pass
+
     # PROBLEM with this is that we can import anything from the target name:
     # from folder import module # need to import module
     #   need to check two things:
@@ -149,6 +170,7 @@ class Analyzer(ast.NodeVisitor):
     #   2. check path without current_folder
     # TODO: there is probably a better way to do this with actually importing the module...
     def visit_ImportFrom(self, node):
+        path_list = []
 
         if node.module is not None:
             module_names = node.module.split('.')
@@ -158,6 +180,11 @@ class Analyzer(ast.NodeVisitor):
         # it's possible we are already in the import folder importing other things
         if len(self.current_folder) > 0 and self.current_folder[0] == module_names[0]:
             del module_names[0]
+
+        # check for aliases e.g import cv2 as cv
+        if module_names[-1] in self.names:
+            if node.names[0].asname is not None:
+                self.names.add(node.names[0].asname)
 
         possible_path = self.current_path
         for folder in self.current_folder:
@@ -169,6 +196,9 @@ class Analyzer(ast.NodeVisitor):
         possible_path_1 = f'{possible_path}.py'
         possible_path_2 = f'{os.path.join(possible_path, node.names[0].name)}.py'
 
+        path_list.append(possible_path_1)
+        path_list.append(possible_path_2)
+
         # sometimes imports reference project root dir instead of local folder
         possible_path_1_no_folder = self.current_path
         possible_path_2_no_folder = self.current_path
@@ -177,79 +207,11 @@ class Analyzer(ast.NodeVisitor):
                 possible_path_1_no_folder = f'{os.path.join(possible_path_1_no_folder, mods)}'
             possible_path_2_no_folder = f'{os.path.join(possible_path_1_no_folder, node.names[0].name)}.py'
             possible_path_1_no_folder = f'{possible_path_1_no_folder}.py'
+            path_list.append(possible_path_1_no_folder)
+            path_list.append(possible_path_2_no_folder)
 
-        if possible_path_1 not in self.attempted_paths:  # check if already visited
-
-            self.attempted_paths.add(possible_path_1) # add to attempted
-            # check for aliases e.g import cv2 as cv
-            if module_names[-1] in self.names:
-                if node.names[0].asname is not None:
-                    self.names.add(node.names[0].asname)
-
-            """
-            # Don't need this, since get_import_file_path() takes care of current_folder
-            # check if import is in current directory:
-            this_path = self.current_path
-            if node.level == 1 and len(self.current_folder) != 0:  # just one for now; this does not work with function analyzer
-                this_path = os.path.join(self.current_path, self.current_folder[0])  # add current folder to path
-            """
-            try:
-                print(f'[DEBUG] Trying to open {possible_path_1}...')
-                with open(possible_path_1) as new_file:
-                    print(f'[DEBUG] File found! Starting analysis...')
-                    tree = ast.parse(new_file.read())
-                    if len(module_names) == 1:
-                        self.visit(tree)
-                    else:
-                        self.update_folder_and_visit(tree, module_names)
-                    print(f'[DEBUG] Successfully analysed {possible_path_1}!')
-            except FileNotFoundError:
-                # print(f'[WARNING] Could not find {module_names[0]}.py!')
-                # TODO: also try PYTHONPATH
-                if possible_path_2 not in self.attempted_paths:
-                    try:
-                        self.attempted_paths.add(possible_path_2)
-                        print(f'[DEBUG] Trying to open {possible_path_2}...')
-                        with open(possible_path_2) as new_file:
-                            print(f'[DEBUG] File found! Starting analysis...')
-                            tree = ast.parse(new_file.read())
-                            if len(module_names) == 1:
-                                self.visit(tree)
-                            else:
-                                self.update_folder_and_visit(tree, module_names)
-                            print(f'[DEBUG] Successfully analysed {possible_path_2}!')
-                    except FileNotFoundError:
-                        if possible_path_1_no_folder != self.current_path and possible_path_1_no_folder not in self.attempted_paths:
-                            try:
-                                self.attempted_paths.add(possible_path_1_no_folder)
-                                print(f'[DEBUG] Trying to open {possible_path_1_no_folder}...')
-                                with open(possible_path_1_no_folder) as new_file:
-                                    print(f'[DEBUG] File found! Starting analysis...')
-                                    tree = ast.parse(new_file.read())
-                                    if len(module_names) == 1:
-                                        self.visit(tree)
-                                    else:
-                                        self.update_folder_and_visit(tree, module_names)
-                                    print(f'[DEBUG] Successfully analysed {possible_path_1_no_folder}!')
-                            except FileNotFoundError:
-                                if possible_path_2_no_folder not in self.attempted_paths:
-                                    try:
-                                        self.attempted_paths.add(possible_path_2_no_folder)
-                                        print(f'[DEBUG] Trying to open {possible_path_2_no_folder}...')
-                                        with open(possible_path_2_no_folder) as new_file:
-                                            print(f'[DEBUG] File found! Starting analysis...')
-                                            tree = ast.parse(new_file.read())
-                                            if len(module_names) == 1:
-                                                self.visit(tree)
-                                            else:
-                                                self.update_folder_and_visit(tree, module_names)
-                                            print(f'[DEBUG] Successfully analysed {possible_path_2_no_folder}!')
-                                    except FileNotFoundError:
-                                        pass
-            finally:
-                self.generic_visit(node)
-        else:
-            self.generic_visit(node)
+        self.try_to_open(path_list, module_names)
+        self.generic_visit(node)
 
     def report(self):
         print(f'names: {self.names}')
